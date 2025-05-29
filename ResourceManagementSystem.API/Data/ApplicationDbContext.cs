@@ -12,7 +12,16 @@ namespace ResourceManagementSystem.API.Data
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options) { }
 
-        public DbSet<User> Users => Set<User>();
-        public DbSet<Resource> Resources => Set<Resource>();
+        public DbSet<User> Users { get; set; }
+        public DbSet<TaskItem> Tasks { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<User>()
+                .HasIndex(u => u.Email)
+                .IsUnique();
+
+            base.OnModelCreating(modelBuilder);
+        }
     }
 }
