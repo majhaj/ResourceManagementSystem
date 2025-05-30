@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ResourceManagementSystem.API.Data;
+using ResourceManagementSystem.API.Hubs;
+using ResourceManagementSystem.API.Messaging;
 using ResourceManagementSystem.API.Models;
 
 [Authorize]
@@ -10,10 +13,14 @@ using ResourceManagementSystem.API.Models;
 public class TasksController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
+    private readonly IMessagePublisher _publisher;
+    private readonly IHubContext<TaskHub> _hubContext;
 
-    public TasksController(ApplicationDbContext context)
+    public TasksController(ApplicationDbContext context, IMessagePublisher publisher, IHubContext<TaskHub> hubContext)
     {
         _context = context;
+        _publisher = publisher;
+        _hubContext = hubContext;
     }
 
     [HttpGet]
@@ -25,8 +32,9 @@ public class TasksController : ControllerBase
     [HttpGet("{id}")]
     public async Task<ActionResult<TaskItem>> GetTask(int id)
     {
-        var task = await _context.Tasks.Include(t => t.AssignedToUser)
-                                       .FirstOrDefaultAsync(t => t.Id == id);
+        var task = await _context.Tasks
+                                 .Include(t => t.AssignedToUser)
+                                 .FirstOrDefaultAsync(t => t.Id == id);
 
         return task is null ? NotFound() : Ok(task);
     }
@@ -39,6 +47,10 @@ public class TasksController : ControllerBase
 
         _context.Tasks.Add(task);
         await _context.SaveChangesAsync();
+
+        // Publikacja i wysyłka
+        _publisher.PublishTaskUpdate(task);
+        await _hubContext.Clients.All.SendAsync("TaskUpdated", task);
 
         return CreatedAtAction(nameof(GetTask), new { id = task.Id }, task);
     }
@@ -59,6 +71,10 @@ public class TasksController : ControllerBase
         existing.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
+
+        _publisher.PublishTaskUpdate(existing);
+        await _hubContext.Clients.All.SendAsync("TaskUpdated", existing);
+
         return NoContent();
     }
 
@@ -70,6 +86,10 @@ public class TasksController : ControllerBase
 
         _context.Tasks.Remove(task);
         await _context.SaveChangesAsync();
+
+        _publisher.PublishTaskUpdate(task);
+        await _hubContext.Clients.All.SendAsync("TaskDeleted", id);
+
         return NoContent();
     }
 
@@ -82,6 +102,7 @@ public class TasksController : ControllerBase
         var tasks = await _context.Tasks
                                   .Where(t => t.AssignedToUserId == userId)
                                   .ToListAsync();
+
         return tasks;
     }
 }
