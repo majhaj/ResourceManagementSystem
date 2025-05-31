@@ -1,8 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace ResourceManagementSystem.API.Models
+namespace ResourceManagementSystem.UI.Models
 {
-    public class LoginRequest
+    public class UserLogin
     {
         [Required]
         public string Email { get; set; } = string.Empty;

@@ -8,11 +8,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using ResourceManagementSystem.API.Data;
 using ResourceManagementSystem.API.Hubs;
-using ResourceManagementSystem.API.Services;
+using ResourceManagementSystem.API.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddSingleton<RabbitMqPublisher>();
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlite("Data Source=resources.db"));
@@ -63,6 +61,8 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // Add services to the container.
+builder.Services.AddSingleton<IMessagePublisher, RabbitMqPublisher>();
+
 //builder.Services.AddOpenApi();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -74,14 +74,13 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
     app.UseSwagger();
     app.UseSwaggerUI();
+    app.UseHttpsRedirection();
 }
 
 app.MapHub<TaskSyncHub>("/hubs/tasks");
 
-app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
