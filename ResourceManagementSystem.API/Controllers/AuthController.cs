@@ -46,9 +46,21 @@ namespace ResourceManagementSystem.API.Controllers
         }
 
         [HttpPost("login")]
-        public async Task<IActionResult> Login(LoginRequest request)
+        public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+            Console.WriteLine($"Szukam uzytkownika o emailu: {request.Email}");
+            if (user == null)
+            {
+                Console.WriteLine("Nie znaleziono użytkownika.");
+                return Unauthorized("Invalid credentials");
+            }
+
+            if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+            {
+                Console.WriteLine("Hasło nie pasuje.");
+                return Unauthorized("Invalid credentials");
+            }
             if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
                 return Unauthorized("Invalid credentials");
 
