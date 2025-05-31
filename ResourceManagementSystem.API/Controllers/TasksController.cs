@@ -7,102 +7,124 @@ using ResourceManagementSystem.API.Hubs;
 using ResourceManagementSystem.API.Messaging;
 using ResourceManagementSystem.API.Models;
 
-[Authorize]
-[ApiController]
-[Route("api/[controller]")]
-public class TasksController : ControllerBase
+namespace ResourceManagementSystem.API.Controllers
 {
-    private readonly ApplicationDbContext _context;
-    private readonly IMessagePublisher _publisher;
-    private readonly IHubContext<TaskHub> _hubContext;
-
-    public TasksController(ApplicationDbContext context, IMessagePublisher publisher, IHubContext<TaskHub> hubContext)
+    //[Authorize]
+    [ApiController]
+    [Route("api/[controller]")]
+    public class TasksController : ControllerBase
     {
-        _context = context;
-        _publisher = publisher;
-        _hubContext = hubContext;
-    }
+        private readonly ApplicationDbContext _context;
+        private readonly IMessagePublisher _publisher;
+        private readonly IHubContext<TaskSyncHub> _hubContext;
 
-    [HttpGet]
-    public async Task<ActionResult<IEnumerable<TaskItem>>> GetTasks()
-    {
-        return await _context.Tasks.Include(t => t.AssignedToUser).ToListAsync();
-    }
+        public TasksController(
+            ApplicationDbContext context,
+            IMessagePublisher publisher,
+            IHubContext<TaskSyncHub> hubContext)
+        {
+            _context = context;
+            _publisher = publisher;
+            _hubContext = hubContext;
+        }
 
-    [HttpGet("{id}")]
-    public async Task<ActionResult<TaskItem>> GetTask(int id)
-    {
-        var task = await _context.Tasks
-                                 .Include(t => t.AssignedToUser)
-                                 .FirstOrDefaultAsync(t => t.Id == id);
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<TaskItem>>> GetTasks()
+        {
+            var tasks = await _context.Tasks
+                                      .Include(t => t.AssignedToUser)
+                                      .ToListAsync();
+            return Ok(tasks);
+        }
 
-        return task is null ? NotFound() : Ok(task);
-    }
+        [HttpGet("{id}")]
+        public async Task<ActionResult<TaskItem>> GetTask(int id)
+        {
+            var task = await _context.Tasks
+                                     .Include(t => t.AssignedToUser)
+                                     .FirstOrDefaultAsync(t => t.Id == id);
 
-    [HttpPost]
-    public async Task<ActionResult<TaskItem>> CreateTask(TaskItem task)
-    {
-        task.CreatedAt = DateTime.UtcNow;
-        task.UpdatedAt = DateTime.UtcNow;
+            return task is null ? NotFound() : Ok(task);
+        }
 
-        _context.Tasks.Add(task);
-        await _context.SaveChangesAsync();
+        [HttpPost]
+        public async Task<ActionResult<TaskItem>> CreateTask(TaskItem task)
+        {
+            task.CreatedAt = DateTime.UtcNow;
+            task.UpdatedAt = DateTime.UtcNow;
 
-        // Publikacja i wysyłka
-        _publisher.PublishTaskUpdate(task);
-        await _hubContext.Clients.All.SendAsync("TaskUpdated", task);
+            _context.Tasks.Add(task);
+            await _context.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetTask), new { id = task.Id }, task);
-    }
+            // Publikuj do RabbitMQ i SignalR
+            _publisher.PublishTaskUpdate(task);
+            await _hubContext.Clients.All.SendAsync("TaskUpdated", task);
 
-    [HttpPut("{id}")]
-    public async Task<IActionResult> UpdateTask(int id, TaskItem task)
-    {
-        if (id != task.Id) return BadRequest();
+            return CreatedAtAction(nameof(GetTask), new { id = task.Id }, task);
+        }
 
-        var existing = await _context.Tasks.FindAsync(id);
-        if (existing is null) return NotFound();
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateTask(int id, TaskItem task)
+        {
+            if (id != task.Id) return BadRequest();
 
-        existing.Title = task.Title;
-        existing.Description = task.Description;
-        existing.Status = task.Status;
-        existing.Deadline = task.Deadline;
-        existing.AssignedToUserId = task.AssignedToUserId;
-        existing.UpdatedAt = DateTime.UtcNow;
+            var existing = await _context.Tasks.FindAsync(id);
+            if (existing is null) return NotFound();
 
-        await _context.SaveChangesAsync();
+            existing.Title = task.Title;
+            existing.Description = task.Description;
+            existing.Status = task.Status;
+            existing.Deadline = task.Deadline;
+            existing.AssignedToUserId = task.AssignedToUserId;
+            existing.UpdatedAt = DateTime.UtcNow;
 
-        _publisher.PublishTaskUpdate(existing);
-        await _hubContext.Clients.All.SendAsync("TaskUpdated", existing);
+            await _context.SaveChangesAsync();
 
-        return NoContent();
-    }
+            _publisher.PublishTaskUpdate(existing);
+            await _hubContext.Clients.All.SendAsync("TaskUpdated", existing);
 
-    [HttpDelete("{id}")]
-    public async Task<IActionResult> DeleteTask(int id)
-    {
-        var task = await _context.Tasks.FindAsync(id);
-        if (task is null) return NotFound();
+            return NoContent();
+        }
 
-        _context.Tasks.Remove(task);
-        await _context.SaveChangesAsync();
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteTask(int id)
+        {
+            var task = await _context.Tasks.FindAsync(id);
+            if (task is null) return NotFound();
 
-        _publisher.PublishTaskUpdate(task);
-        await _hubContext.Clients.All.SendAsync("TaskDeleted", id);
+            _context.Tasks.Remove(task);
+            await _context.SaveChangesAsync();
 
-        return NoContent();
-    }
+            _publisher.PublishTaskUpdate(task);
+            await _hubContext.Clients.All.SendAsync("TaskDeleted", id);
 
-    [HttpGet("/api/users/{userId}/tasks")]
-    public async Task<ActionResult<IEnumerable<TaskItem>>> GetTasksForUser(int userId)
-    {
-        var userExists = await _context.Users.AnyAsync(u => u.Id == userId);
-        if (!userExists) return NotFound();
+            return NoContent();
+        }
 
-        var tasks = await _context.Tasks
-                                  .Where(t => t.AssignedToUserId == userId)
-                                  .ToListAsync();
+        [HttpGet("/api/users/{userId}/tasks")]
+        public async Task<ActionResult<IEnumerable<TaskItem>>> GetTasksForUser(int userId)
+        {
+            var userExists = await _context.Users.AnyAsync(u => u.Id == userId);
+            if (!userExists) return NotFound();
 
-        return tasks;
+            var tasks = await _context.Tasks
+                                      .Where(t => t.AssignedToUserId == userId)
+                                      .ToListAsync();
+            return Ok(tasks);
+        }
+
+        [HttpGet("user")]
+        public async Task<ActionResult<IEnumerable<TaskItem>>> GetTasksForCurrentUser()
+        {
+            var userIdString = User?.FindFirst("sub")?.Value;
+            if (userIdString == null || !int.TryParse(userIdString, out var userId))
+                return Unauthorized();
+
+            var tasks = await _context.Tasks
+                                    .Where(t => t.AssignedToUserId == userId)
+                                    .ToListAsync();
+            return Ok(tasks);
+        }
+
     }
 }

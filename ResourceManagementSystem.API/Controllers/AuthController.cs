@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -6,6 +7,8 @@ using ResourceManagementSystem.API.Models;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using LoginRequest = ResourceManagementSystem.API.Models.LoginRequest;
+using RegisterRequest = ResourceManagementSystem.API.Models.RegisterRequest;
 
 namespace ResourceManagementSystem.API.Controllers
 {
@@ -23,7 +26,7 @@ namespace ResourceManagementSystem.API.Controllers
         }
 
         [HttpPost("register")]
-        public async Task<IActionResult> Register(RegisterRequest request)
+        public async Task<IActionResult> Register([FromBody] RegisterRequest request)
         {
             if (await _context.Users.AnyAsync(u => u.Email == request.Email))
                 return BadRequest("Email already exists.");

@@ -1,0 +1,27 @@
+@page "/login"
+@using Microsoft.AspNetCore.Components.Forms
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<h3>Logowanie</h3>
+
+<EditForm Model="login" OnValidSubmit="HandleLogin">
+    <InputText @bind-Value="login.Email" placeholder="Email" class="form-control" />
+    <InputText @bind-Value="login.Password" placeholder="Hasło" type="password" class="form-control" />
+    <button class="btn btn-primary mt-2">Zaloguj</button>
+</EditForm>
+
+@code {
+    private UserLogin login = new();
+
+    private async Task HandleLogin()
+    {
+        var response = await Http.PostAsJsonAsync("auth/login", login);
+        if (response.IsSuccessStatusCode)
+        {
+            var token = await response.Content.ReadAsStringAsync();
+            // Tu: zapisz token w lokalnym stanie/autoryzacji
+            Navigation.NavigateTo("/tasks");
+        }
+    }
+}

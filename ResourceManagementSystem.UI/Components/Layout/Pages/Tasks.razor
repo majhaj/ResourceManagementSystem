@@ -1,0 +1,157 @@
+@page "/tasks"
+@using Microsoft.AspNetCore.Components.Authorization
+@inject HttpClient Http
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
+
+<h3>Tasks</h3>
+
+@if (IsLoading)
+{
+    <p>Loading...</p>
+}
+else
+{
+    @if (IsAdmin)
+    {
+        <button class="btn btn-success mb-3" @onclick="ShowCreateForm">+ Create Task</button>
+    }
+
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Description</th>
+                <th>Status</th>
+                <th>Deadline</th>
+                <th>Assigned To</th>
+                <th>Created</th>
+                <th>Updated</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var task in TaskList)
+            {
+                <tr>
+                    <td>@task.Title</td>
+                    <td>@task.Description</td>
+                    <td>@task.Status</td>
+                    <td>@task.Deadline?.ToString("yyyy-MM-dd")</td>
+                    <td>@task.AssignedToUser?.Email ?? "-"</td>
+                    <td>@task.CreatedAt.ToString("g")</td>
+                    <td>@task.UpdatedAt.ToString("g")</td>
+                    <td>
+                        @if (IsAdmin)
+                        {
+                            <button class="btn btn-sm btn-primary me-1" @onclick="() => AssignUser(task.Id)">Assign</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteTask(task.Id)">Delete</button>
+                        }
+                        else if (IsUser && task.Status == "ToDo")
+                        {
+                            <button class="btn btn-sm btn-success" @onclick="() => AcceptTask(task.Id)">Accept</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (ShowTaskForm)
+{
+    <EditForm Model="@NewTask" OnValidSubmit="CreateTask">
+        <DataAnnotationsValidator />
+        <div class="mb-2">
+            <label>Title</label>
+            <InputText class="form-control" @bind-Value="NewTask.Title" />
+        </div>
+        <div class="mb-2">
+            <label>Description</label>
+            <InputTextArea class="form-control" @bind-Value="NewTask.Description" />
+        </div>
+        <div class="mb-2">
+            <label>Deadline</label>
+            <InputDate class="form-control" @bind-Value="NewTask.Deadline" />
+        </div>
+        <button class="btn btn-primary">Save</button>
+        <button class="btn btn-secondary ms-2" type="button" @onclick="() => ShowTaskForm = false">Cancel</button>
+    </EditForm>
+}
+
+@code {
+    private List<TaskItem> TaskList = new();
+    private TaskItem NewTask = new();
+    private bool ShowTaskForm = false;
+    private bool IsAdmin = false;
+    private bool IsUser = false;
+    private bool IsLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        IsAdmin = user.IsInRole("Admin");
+        IsUser = user.IsInRole("User");
+
+        await LoadTasks();
+    }
+
+    private async Task LoadTasks()
+    {
+        IsLoading = true;
+        try
+        {
+            TaskList = IsAdmin
+                ? await Http.GetFromJsonAsync<List<TaskItem>>("api/tasks")
+                : await Http.GetFromJsonAsync<List<TaskItem>>("api/tasks/user");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private void ShowCreateForm()
+    {
+        NewTask = new TaskItem();
+        ShowTaskForm = true;
+    }
+
+    private async Task CreateTask()
+    {
+        var response = await Http.PostAsJsonAsync("api/tasks", NewTask);
+        if (response.IsSuccessStatusCode)
+        {
+            ShowTaskForm = false;
+            await LoadTasks();
+        }
+    }
+
+    private async Task AssignUser(int taskId)
+    {
+        var email = await JS.InvokeAsync<string?>("prompt", "Enter user email to assign:");
+        if (!string.IsNullOrWhiteSpace(email))
+        {
+            await Http.PutAsJsonAsync($"api/tasks/{taskId}/assign", new { Email = email });
+            await LoadTasks();
+        }
+    }
+
+    private async Task AcceptTask(int taskId)
+    {
+        await Http.PutAsync($"api/tasks/{taskId}/accept", null);
+        await LoadTasks();
+    }
+
+    private async Task DeleteTask(int taskId)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete this task?");
+        if (confirmed)
+        {
+            await Http.DeleteAsync($"api/tasks/{taskId}");
+            await LoadTasks();
+        }
+    }
+}
